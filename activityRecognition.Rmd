@@ -10,65 +10,173 @@ knitr::opts_chunk$set(echo = TRUE,message=FALSE)
 ```
 
 ### 1.Overview  
-The goal of this project is to build the model to classify 5 different ways of weight lifting exercises
+The Qualitative Activity Recognition is to recognize how well the certain activities are performed. In this project, we use the data [Weight Lifting Exercises Dataset](http://web.archive.org/web/20161217164008/http://groupware.les.inf.puc-rio.br/work.jsf?p1=11201), which was collected by wearable sensors while participants are performing the weight lifting exercises in correct ways and also with a set of common mistakes. The goal of this project is to build the model to classify the exercise categories described below.
+
+- Exactly according to the specification (Class A)  
+- Throwing the elbows to the front (Class B)  
+- Lifting the dumbbell only halfway (Class C)  
+- Lowering the dumbbell only halfway (Class D) 
+- Throwing the hips to the front (Class E)  
 
 ### 2.Data  
+
+#### 2.1  Load the data  
 
 ```{r loadData,cache=TRUE}
 url <- 'https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv'
 data <- read.csv(url)
 dim(data)
 ```
+#### 2.2 Split the dataset  
 
-```{r splitData}
+We use 70% of data for trainig the model, 30% for testing the model accuracy.
+```{r splitData, cache=TRUE}
 library(caret)
 set.seed(10103)
-# use 70% for training, 30% for testing
 inTrain <- createDataPartition(y=data$classe,p=0.7,list=FALSE)
 train <- data[inTrain,]
 test <- data[-inTrain,]
 obs <- dim(train)[1]; var <- dim(train)[2]
 ```
-The training dataset contains `r obs` observations and `r var` features. In this dataset there are many features with NA or empty strings. All features with NA, around 98% of the observations are NA(missing), all features with empty strings, also around 98% of the observations are empty strings(missing). Thus we omit those features and also omit features irrelevant to activity recognition such as user names, timestamp, and new window.
+#### 2.3 Data cleaning  
 
-```{r summaryTraining}
-# # count NAs for each column
-# NAcounts <- colSums(is.na(train))
-# unique(NAcounts)
-# # count empty strings "" in character class columns
-# dataClass <- sapply(train,class)
-# chrVar <- names(dataClass[dataClass=='character'])
-# numVar <- names(dataClass[dataClass!='character'])
-# emptyCounts <- colSums(train[,chr]=='')
-# unique(emptyCounts)
-# # check near zero variance variables among not NA numeric variables
-# nonNAnumeric <- intersect(numVar,names(NAcounts[NAcounts==0]))
-# nzv <- nearZeroVar(train[,nonNAnumeric],saveMetrics=TRUE)$nzv
-# nzv
-# data.frame(Data.class=c('numeric/integer','character'),
-#            Counts=c(length(numVar),length(chrVar)),
-#            NA.or.Empty=c(sum(NAcounts!=0),sum(emptyCounts!=0)))
-# 
-# 
-# 
-# 
+The training dataset contains `r obs` observations and `r var` features. In this dataset there are many features with NA or empty strings. All features with NA, around 98% of the observations are NA(missing), all features with empty strings, also around 98% of the observations are empty strings(missing). Thus we omit those features and also omit features irrelevant to activity recognition such as user names, time stamp, and new window.
 
 
-# xyz <- names(train)[grepl('[xyz]$',names(train))]
-# notXyz <- names(train[grepl('[^xyz]$',names(train))])
-# length(xyz)
-# length(notXyz)
+```{r summaryTraining, cache=TRUE}
+# select only numeric variables(character vars are 98% empty strings)
+dataClass <- sapply(train,class)
+numVar <- names(dataClass[dataClass!='character'])
+train <- train[,c(numVar,'classe')]
+# remove irrelevant variables
+irrelevant <- match(c('X','raw_timestamp_part_1','raw_timestamp_part_2','num_window'),names(train))
+train <- train[,-irrelevant]
+dim(train)
 
+# count NAs for each column and find feature names for non-NA
+NAcounts <- colSums(is.na(train))
+nonNaVar <- names(NAcounts[NAcounts==0])
+train <- train[,nonNaVar]
+obs2 <- dim(train)[1]; var2 <- dim(train)[2]
+```
+After Data cleaning, training dataset has `r obs2` and `r var2` features including the target label.
+
+### 3.Features and Model selection  
+#### 3.1 Model selection  
+Since many of the features are highly correlated each other, I chose the Random Forest model, of which impact of collinearity is smaller. 
+
+#### 3.2 Feature selection  
+The approach I take is to fit the Random Forest model with all the features and calculate the feature importance(mean decrease of gini index) and then fit the model removing the least important feature one by one and stop before the test accuracy goes down significantly.
+
+
+```{r featureExtraction, cache=TRUE}
+# split for the temporary training set for feature selection
+set.seed(1234)
+inTempTrain <- createDataPartition(y=train$classe,
+                                   p=0.7,
+                                   list=FALSE)
+tempTrain <- train[inTempTrain,]
+tempTest <- train[-inTempTrain,]
+tempTrain$classe <- factor(tempTrain$classe)
+tempTest$classe <- factor(tempTest$classe)
+
+library(randomForest)
+set.seed(1892)
+mdl1 <- randomForest(classe ~.,data=tempTrain,importance=TRUE)
+varImp <-sort(m1$importance[,7])
+varImpDf <- data.frame(idx=1:52,
+                       featureNames=names(varImp),
+                       meanDecreaseGini=as.numeric(varImp))
+library(ggplot2)
+g <- ggplot(varImpDf,aes(x=meanDecreaseGini,y=idx))
+g <- g + geom_bar(stat='identity',orientation='y')
+g <- g + scale_y_continuous(breaks=1:52,labels=varImpDf$featureNames)
+g <- g + labs(title='Fig.1:Feature Importance (Mean decrease of gini index)')
+g + ylab('')
 
 ```
-### 3.Explorattory Analysis  
-```{r featureExtraction}
+```{r featureExtraction2, cache=TRUE}
+# create 5 folds for testing out of temporary training data
+set.seed(1324)
+folds <- createFolds(y=tempTrain$classe,k=5,returnTrain=TRUE)
+# create dataframe for storing the accuracy of each model
+accDf <- data.frame(matrix(rep(0,200),nrow=5))
+for (i in 1:5){
+  trainFold <- tempTrain[folds[[i]],]
+  testFold <- tempTrain[-folds[[i]],]
+
+  for (j in 1:40){
+    vars <- varImpDf$featureNames[j:52]
+    set.seed(1357)
+    m <- randomForest(classe ~.,data=trainFold[,c(vars,'classe')],
+                      xtest=testFold[,vars],
+                      ytest=testFold[,'classe'])
+    accDf[i,j] <- mean(m$test$predicted==testFold$classe)
+  }
+}
+
+# transpose accDf for plotting
+accDfT <- data.frame(cbind(seq(1,40),t(accDf)))
+colnames(accDfT) <- c('idx','Fold1','Fold2','Fold3','Fold4','Fold5')
+
+# plot the results
+g <- ggplot(accDfT,aes(x=idx,y=Fold1))
+g <- g + geom_point(col='steelblue')+geom_line(col='steelblue')
+g <- g + geom_point(aes(x=idx,y=Fold2),
+                    col='steelblue')+geom_line(aes(x=idx,y=Fold2),
+                                               col='steelblue')
+g <- g + geom_point(aes(x=idx,y=Fold3),
+                    col='steelblue')+geom_line(aes(x=idx,y=Fold3),
+                                               col='steelblue')
+g <- g + geom_point(aes(x=idx,y=Fold4),
+                    col='steelblue')+geom_line(aes(x=idx,y=Fold4),
+                                               col='steelblue')
+g <- g + geom_point(aes(x=idx,y=Fold5),
+                    col='steelblue')+geom_line(aes(x=idx,y=Fold5),
+                                               col='steelblue')
+g <- g + geom_point(aes(x=idx,y=means),
+                    data=data.frame(idx=1:40,means=colMeans(accDf)),
+                    col='red')+geom_line(aes(x=idx,y=means),
+                                         data=data.frame(idx=1:40,
+                                                         means=colMeans(accDf)),
+                                         col='red')
+g <- g + scale_x_continuous(breaks=seq(1,40,by=2),
+                            labels=seq(52,13)[rep(c(TRUE,FALSE),20)])
+g <- g + labs(title='Fig.2:Test set accuracy of the reduced number of features')
+g <- g + xlab('The number of features') + ylab('Accuracy')
+g
 
 ```
+  
+  The blue lines in Figure.2 are the test set accuracy for different number of features from 5 different folds. Far left is accuracy of the model with all the features and far right is those of reduced to 13 features. The red line is average accuracy of 5 different folds. It is surprising to see we could predict 97.5 % of responses with only the most important 13 features. The highest average accuracy is 98.69% with 50 features and also 98.68% with 44 features. Since both accuracy are almost same, I chose the model with 44 features to make a model simpler. To make sure to get same level of accuracy, I fit the model with 44 features and test with the data that I set aside.
+
+```{r testNumberOfFeatures,cache=TRUE}
+vars44 <- varImpDf$featureNames[9:52]
+set.seed(1084)
+m44 <- randomForest(classe ~.,data=tempTrain[,c(vars44,'classe')],
+                    xtest=tempTest[,vars44],
+                    ytest=tempTest[,'classe'])
+mean(m44$test$predicted==tempTest$classe)
+```
+With 44 features, we got 99.42% accuracy.  
 
 ### 4.Modeling  
 
 ```{r modeling}
+
+# subset the training and test set for the selected features
+train <- train[,c(vars44,'classe')]
+test <- test[,c(vars44,'classe')]
+
+# train the model 
+set.seed(8563) 
+model <- train(classe ~.,data=train,method='rf')
+model$finalModel
+mean(predict(model)==train$classe)
+mean(predict(model,test)==test$classe)
+table(predict(model,test),test$classe)
+
+
 
 ```
 ### 5.Results  
