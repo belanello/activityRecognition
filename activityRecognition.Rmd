@@ -95,6 +95,9 @@ varImp <-sort(mdl1$importance[,7])
 varImpDf <- data.frame(idx=1:52,
                        featureNames=names(varImp),
                        meanDecreaseGini=as.numeric(varImp))
+```
+```{r plotImportance,fig.width=6,fig.height=5}
+
 library(ggplot2)
 g <- ggplot(varImpDf,aes(x=meanDecreaseGini,y=idx))
 g <- g + geom_bar(stat='identity',orientation='y')
@@ -123,7 +126,8 @@ for (i in 1:8){
     accDf[i,j] <- mean(m$test$predicted==testFold$classe)
   }
 }
-
+```
+```{r plotAccuracy,fig.width=6,fig.height=5}
 # transpose accDf for plotting
 accDfT <- data.frame(cbind(seq(1,40),t(accDf)))
 colnames(accDfT) <- c('idx','Fold1','Fold2','Fold3','Fold4','Fold5',
@@ -157,6 +161,7 @@ In Figure.2, the test set accuracy of 8 different folds with all 52 features Fro
 
 ```{r testNumberOfFeatures,cache=TRUE}
 vars26 <- varImpDf$featureNames[27:52]
+vars26
 set.seed(1084)
 mdl2 <- randomForest(classe ~.,data=tempTrain[,c(vars26,'classe')],
                     xtest=tempTest[,vars26],
@@ -182,9 +187,33 @@ mdl3 <- train(classe ~.,data=train,method='rf')
 mdl3
 ```
 ### 5.Results  
-```{r results}
-print(paste('training set accuracy: ',mean(predict(mdl3)==train$classe)))
-print(paste('test set accuracy: ',mean(predict(mdl3,test)==test$classe)))
 
-table(predict(mdl3,test),test$classe)
+The final model was constructed with 500 trees, at each split of each tree 2 predictors were bootstrapped among all the predictors as split candidates. We use this model to predict classes of the test set that we haven't used yet.
+```{r test}
+correct <- sum(predict(mdl3,test)==test$classe)
+wrong <- sum(predict(mdl3,test)!=test$classe)
+testAcc <- round(mean(predict(mdl3,test)==test$classe),3)
+testObs <- dim(test)[1]
 ```
+
+The test data accuracy is **`r testAcc`**. Out of `r testObs` observations, we got `r correct` classes correct and `r wrong` classes wrong.
+Below Figure.3 is a normalized confusion matrix of the result from test dataset. Grey colored diagonal boxes are the percentages of correct predictions. we achieved more than 99% for all the classes.
+
+```{r confusionMatrix, fig.width=5,fig.height=5,warning=FALSE}
+confmat <- table(predict(mdl3,test),test$classe)
+confProp <- proportions(confmat,margin=2)
+
+library(yardstick)
+library(ggplot2)
+ap <- autoplot(conf_mat(confProp),type='heatmap')
+ap <- ap + ylab('Predicted class') + xlab('Actual class')
+ap <- ap + labs(title='Fig.3: \n Confusion matrix of actual classes and predicted classes',subtitle='(The number of predicted class / the number of actual class)')
+ap
+
+```
+  
+  
+### 6.Reference  
+
+Qualitative Activity Recognition of Weight Lifting Exercises  
+http://web.archive.org/web/20170519033209/http://groupware.les.inf.puc-rio.br/public/papers/2013.Velloso.QAR-WLE.pdf
