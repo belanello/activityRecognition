@@ -188,7 +188,7 @@ mdl3
 ```
 ### 5.Results  
 
-The final model was constructed with 500 trees, at each split of each tree 2 predictors were bootstrapped among all the predictors as split candidates. We use this model to predict classes of the test set that we haven't used yet.
+The final model was constructed with 500 trees, at each split of each tree 2 predictors were chosen among all the predictors as split candidates. We use this model to predict classes of the test set that we haven't used yet.
 ```{r test}
 correct <- sum(predict(mdl3,test)==test$classe)
 wrong <- sum(predict(mdl3,test)!=test$classe)

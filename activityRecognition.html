@@ -368,7 +368,7 @@ mdl3</code></pre>
 </div>
 <div id="results" class="section level3">
 <h3>5.Results</h3>
-<p>The final model was constructed with 500 trees, at each split of each tree 2 predictors were bootstrapped among all the predictors as split candidates. We use this model to predict classes of the test set that we haven’t used yet.</p>
+<p>The final model was constructed with 500 trees, at each split of each tree 2 predictors were chosen among all the predictors as split candidates. We use this model to predict classes of the test set that we haven’t used yet.</p>
 <pre class="r"><code>correct &lt;- sum(predict(mdl3,test)==test$classe)
 wrong &lt;- sum(predict(mdl3,test)!=test$classe)
 testAcc &lt;- round(mean(predict(mdl3,test)==test$classe),3)
