@@ -66,11 +66,18 @@ After Data cleaning, training dataset has `r obs2` and `r var2` features includi
 Since many of the features are highly correlated each other, I chose the Random Forest model in which collinearity is not a issue. 
 
 #### 3.2 Feature selection  
-The approach I take is to fit the Random Forest model with all the features and calculate the feature importance(mean decrease of gini index) and then fit the model removing the least important feature one by one and stop before the test accuracy goes down significantly.
+The approach I take is  
+
+1. Fit the Random Forest model with all the features and calculate the feature importance(mean decrease of gini index). 
+2. Fit the model removing feature from the least important one and continue till 39 features are removed.
+3. Calculate the test set accuracy for each model with reduced features.
+4. Repeat previous steps 2 and 3 for 8 different folds.  
+5. Plot the test accuracy for the 8 different folds along with the mean values.
+6. Decide how many features we omit or model with all the features. 
 
 
 ```{r featureExtraction, cache=TRUE}
-# split for the temporary training set for feature selection
+# split  the training data for another temporary training set for feature selection
 set.seed(1234)
 inTempTrain <- createDataPartition(y=train$classe,
                                    p=0.7,
@@ -83,6 +90,7 @@ tempTest$classe <- factor(tempTest$classe)
 library(randomForest)
 set.seed(1892)
 mdl1 <- randomForest(classe ~.,data=tempTrain,importance=TRUE)
+# sort feature importance ascending order
 varImp <-sort(mdl1$importance[,7])
 varImpDf <- data.frame(idx=1:52,
                        featureNames=names(varImp),
@@ -95,8 +103,9 @@ g <- g + labs(title='Fig.1:Feature Importance (Mean decrease of gini index)')
 g + ylab('')
 
 ```
+
 ```{r featureExtraction2, cache=TRUE}
-# create 5 folds for testing out of temporary training data
+# create 8 folds for testing out of temporary training data
 set.seed(1324)
 folds <- createFolds(y=tempTrain$classe,k=8,returnTrain=TRUE)
 # create dataframe for storing the accuracy of each model
@@ -118,47 +127,33 @@ for (i in 1:8){
 # transpose accDf for plotting
 accDfT <- data.frame(cbind(seq(1,40),t(accDf)))
 colnames(accDfT) <- c('idx','Fold1','Fold2','Fold3','Fold4','Fold5',
-                      'Fold6','Fold7','Fold8')
+                'Fold6','Fold7','Fold8')
+# make accDfT long format
+library(reshape2)
+accDfLong <- melt(accDfT,id.vars='idx')
+# make mean accuracy dataframe 
+
+accDfMean <- data.frame(idx=1:40,means=colMeans(accDf),
+                        variable=rep('mean',40))
 
 # plot the results
-g <- ggplot(accDfT,aes(x=idx,y=Fold1))
+g <- ggplot(accDfLong,aes(x=idx,y=value,group=variable))
 g <- g + geom_point(col='steelblue')+geom_line(col='steelblue')
-g <- g + geom_point(aes(x=idx,y=Fold2),
-                    col='steelblue')+geom_line(aes(x=idx,y=Fold2),
-                                               col='steelblue')
-g <- g + geom_point(aes(x=idx,y=Fold3),
-                    col='steelblue')+geom_line(aes(x=idx,y=Fold3),
-                                               col='steelblue')
-g <- g + geom_point(aes(x=idx,y=Fold4),
-                    col='steelblue')+geom_line(aes(x=idx,y=Fold4),
-                                               col='steelblue')
-g <- g + geom_point(aes(x=idx,y=Fold5),
-                    col='steelblue')+geom_line(aes(x=idx,y=Fold5),
-                                               col='steelblue')
-g <- g + geom_point(aes(x=idx,y=Fold6),
-                    col='steelblue')+geom_line(aes(x=idx,y=Fold6),
-                                               col='steelblue')
-g <- g + geom_point(aes(x=idx,y=Fold7),
-                    col='steelblue')+geom_line(aes(x=idx,y=Fold7),
-                                               col='steelblue')
-g <- g + geom_point(aes(x=idx,y=Fold8),
-                    col='steelblue')+geom_line(aes(x=idx,y=Fold8),
-                                               col='steelblue')
-g <- g + geom_point(aes(x=idx,y=means),
-                    data=data.frame(idx=1:40,means=colMeans(accDf)),
-                    col='red')+geom_line(aes(x=idx,y=means),
-                                         data=data.frame(idx=1:40,
-                                                         means=colMeans(accDf)),
-                                         col='red')
+g <- g + geom_point(data=accDfMean,
+                    aes(x=idx,y=means),
+                    col='red') + geom_line(data=accDfMean,
+                                           aes(x=idx,y=means),
+                                           col='red')
 g <- g + scale_x_continuous(breaks=seq(1,40,by=2),
-                            labels=seq(52,13)[rep(c(TRUE,FALSE),20)])
+                          labels=seq(52,13)[rep(c(TRUE,FALSE),20)])
 g <- g + labs(title='Fig.2:Test set accuracy of the reduced number of features')
 g <- g + xlab('The number of features') + ylab('Accuracy')
 g
 
+
 ```
   
-In Figure.2, the test set accuracy of 8 different folds with all 52 features From the far left which reduced one by one till 13 features are plotted in blue line. The red line is average accuracy of 8 different folds. It is surprising to see we could predict 97.7 % of responses on average with only the most important 13 features. We can see from the model with 25 features, the average accuracy starts to go down noticeably. Thus we omit 26 features keep the rest of 26 more important features. To make sure tha we get the same level of accuracy, I fit the model with new subset of features and test with the data that I set aside.
+In Figure.2, the test set accuracy of 8 different folds with all 52 features From the far left which reduced one by one till 13 features are plotted in blue line. The red line is average accuracy of 8 different folds. It is surprising to see we could predict 97.7 % of responses on average with only the most important 13 features. We can see from the model with 25 features, the average accuracy starts to go down noticeably. Thus we omit 26 features keep the rest of 26 more important features. To make sure that we get the same level of accuracy, I fit the model with new subset of features and test with the data that I set aside.
 
 ```{r testNumberOfFeatures,cache=TRUE}
 vars26 <- varImpDf$featureNames[27:52]
@@ -166,12 +161,14 @@ set.seed(1084)
 mdl2 <- randomForest(classe ~.,data=tempTrain[,c(vars26,'classe')],
                     xtest=tempTest[,vars26],
                     ytest=tempTest[,'classe'])
-accMdl2 <- mean(mdl2$test$predicted==tempTest$classe)
+accMdl2 <- round(mean(mdl2$test$predicted==tempTest$classe),4)
 
 ```
-With 26 features above, we got `r accMdl2`% accuracy.  
+With 26 features above, we got `r accMdl2` accuracy.  
 
 ### 4.Modeling  
+
+Now we train the model with the selected features using default  setting of train function for random forest model in caret package.  
 
 ```{r modeling,cache=TRUE}
 
@@ -183,16 +180,11 @@ test <- test[,c(vars26,'classe')]
 set.seed(8563) 
 mdl3 <- train(classe ~.,data=train,method='rf')
 mdl3
-
-mean(predict(mdl3)==train$classe)
-mean(predict(mdl3,test)==test$classe)
-table(predict(mdl3,test),test$classe)
-
-
-
 ```
 ### 5.Results  
 ```{r results}
-mdl3
+print(paste('training set accuracy: ',mean(predict(mdl3)==train$classe)))
+print(paste('test set accuracy: ',mean(predict(mdl3,test)==test$classe)))
 
+table(predict(mdl3,test),test$classe)
 ```
